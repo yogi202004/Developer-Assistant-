@@ -23,7 +23,7 @@
     "test:live": "node --import tsx --test test/live/*.live.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
