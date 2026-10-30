@@ -1,0 +1,47 @@
+{
+  "name": "dev-assistant",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Free, local AI developer assistant: Ollama + Discord + ClickUp + Gmail",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "register": "tsx src/scripts/register-commands.ts",
+    "gmail:auth": "tsx src/scripts/gmail-auth.ts",
+    "typecheck": "tsc",
+    "mcp": "tsx src/mcp.ts",
+    "mcp:config": "tsx src/scripts/print-mcp-config.ts",
+    "dashboard": "tsx src/scripts/open-dashboard.ts",
+    "service:install": "tsx src/scripts/service.ts install",
+    "service:uninstall": "tsx src/scripts/service.ts uninstall",
+    "service:restart": "tsx src/scripts/service.ts restart",
+    "service:status": "tsx src/scripts/service.ts status",
+    "service:logs": "tsx src/scripts/service.ts logs",
+    "demo": "tsx src/scripts/demo-preview.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:live": "node --import tsx --test test/live/*.live.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "better-sqlite3": "^11.7.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "tsx": "^4.19.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.7.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  }
+}

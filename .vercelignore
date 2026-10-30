@@ -1,0 +1,10 @@
+# Only the public demo (public/ + api/) is deployed. Never upload secrets or your data.
+.env
+.env.*
+!.env.example
+data/
+node_modules/
+src/
+test/
+docs/
+scripts/

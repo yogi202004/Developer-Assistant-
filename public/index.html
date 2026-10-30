@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dev Assistant — your private AI assistant for developers</title>
+  <meta name="description" content="A free, private AI assistant for developers. ClickUp tasks, Gmail triage and replies, a morning plan, and Discord alerts, powered by a local AI model.">
+  <meta property="og:title" content="Dev Assistant — a free, private AI assistant for developers">
+  <meta property="og:description" content="ClickUp + Gmail + Discord, with a local AI model. Turns tasks into checklists and Cursor prompts, triages email, drafts replies you approve.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Dev Assistant">
+  <meta property="og:image" content="/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="627">
+  <meta property="og:image:alt" content="Dev Assistant: an AI co-pilot for developers with ClickUp, Gmail and Discord, shown next to its dashboard and chat">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og.png">
+  <meta name="theme-color" content="#0b0f17">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="#today" aria-label="Dev Assistant overview">
+        <span class="brand-logo"><img src="/favicon.svg" alt="" width="40" height="40"></span>
+        <span class="brand-text">
+          <span class="brand-name">Dev Assistant <span id="mode-pill" class="pill"></span></span>
+          <span class="brand-tag">Your AI co-pilot</span>
+        </span>
+      </a>
+      <button id="ask-btn" class="ask-btn" type="button"></button>
+      <nav id="nav" aria-label="Sections"></nav>
+      <div id="sidebar-foot" class="sidebar-foot"></div>
+    </aside>
+    <main class="main">
+      <div id="banner"></div>
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Loading…</h1>
+          <p id="view-sub" class="muted"></p>
+        </div>
+        <div id="view-actions" class="row"></div>
+      </header>
+      <section id="view" class="view"></section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header>
+        <h2 id="modal-title"></h2>
+        <button type="button" class="btn ghost small" data-close aria-label="Close">Close</button>
+      </header>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
