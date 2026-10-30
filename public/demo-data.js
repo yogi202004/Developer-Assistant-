@@ -4,7 +4,7 @@
 /** Shown in the demo banner. Set repoUrl to your GitHub repo before you deploy. */
 export const DEMO_INFO = {
   ownerName: 'Yogesh',
-  repoUrl: '',
+  repoUrl: 'https://github.com/yogi202004/Developer-Assistant-',
   tagline: 'A free, private AI assistant for developers: ClickUp + Gmail + Discord, powered by a local AI model.',
 };
 
