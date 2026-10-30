@@ -1016,6 +1016,8 @@ async function route() {
   const v = VIEWS[key];
   for (const a of document.querySelectorAll('#nav a')) a.classList.toggle('active', a.dataset.view === key);
   if (cleanup) { clearInterval(cleanup); cleanup = null; }
+  setDrawer(false);
+  $('mobile-title').textContent = v.title;
   $('view-title').textContent = v.title;
   $('view-sub').textContent = v.sub;
   const actions = $('view-actions');
@@ -1031,7 +1033,18 @@ async function route() {
   if (typeof timer === 'number') cleanup = timer;
 }
 
+/** Phone layout: the sidebar slides in from the left. */
+function setDrawer(open) {
+  document.body.classList.toggle('nav-open', open);
+  $('menu-btn').setAttribute('aria-expanded', String(open));
+  $('menu-btn').setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+}
+
 function buildNav() {
+  $('menu-btn').addEventListener('click', () => setDrawer(!document.body.classList.contains('nav-open')));
+  $('drawer-backdrop').addEventListener('click', () => setDrawer(false));
+  $('drawer-close').addEventListener('click', () => setDrawer(false));
+  $('nav').addEventListener('click', (ev) => { if (ev.target.closest('a')) setDrawer(false); });
   const groups = new Map();
   for (const [key, v] of Object.entries(VIEWS)) {
     if (!groups.has(v.group)) groups.set(v.group, []);
@@ -1042,7 +1055,7 @@ function buildNav() {
   $('nav').replaceChildren(...[...groups].map(([name, links]) => h('div', { class: 'nav-group' }, h('p', { class: 'nav-title' }, name), links)));
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   $('ask-btn').replaceChildren(h('span', { class: 'ask-icon' }, icon('sparkle')), h('span', { class: 'grow' }, 'Ask assistant'), h('kbd', null, mac ? '⌘K' : 'Ctrl K'));
-  $('ask-btn').addEventListener('click', () => chat.open());
+  $('ask-btn').addEventListener('click', () => { setDrawer(false); chat.open(); });
 }
 
 function demoBanner() {
@@ -1102,7 +1115,7 @@ async function main() {
     }
     if (ev.target.closest?.('[data-close]')) closeModal();
   });
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { closeModal(); setDrawer(false); } });
   await route();
   refreshBadges();
   sidebarStatus();
