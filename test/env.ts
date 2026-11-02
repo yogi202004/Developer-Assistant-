@@ -9,6 +9,7 @@ Object.assign(process.env, {
   // Defined-but-empty values win over .env (dotenv never overrides existing variables).
   DISCORD_TOKEN: '', DISCORD_APP_ID: '', DISCORD_GUILD_ID: '', DISCORD_OWNER_ID: '', DISCORD_ALLOWED_GUILD_ID: '',
   CLICKUP_TOKEN: '', CLICKUP_TEAM_ID: '',
+  GITHUB_TOKEN: '', GITHUB_USER: '', GITHUB_REPOS: '',
   OLLAMA_URL: 'http://127.0.0.1:9', // closed port: no real model calls
   MCP_DISCORD_CONFIRM_MODE: 'dm_code', MCP_CONFIRM_MODE: 'dm_code',
   MCP_ALLOW_EMAIL_SEND: 'true', MCP_ALLOW_CLICKUP_WRITES: 'true',

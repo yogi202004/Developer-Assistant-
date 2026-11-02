@@ -146,6 +146,7 @@ describe('14. live dashboard API (real modules, nothing configured)', () => {
     const r = liveRoutes({ discordReady: () => false, startedAt: 1 });
     assert.deepEqual(await r['GET /api/tasks']({}), { configured: false, working: [], buckets: null, counts: null });
     assert.equal((await r['GET /api/inbox']({}) as { configured: boolean }).configured, false);
+    assert.equal((await r['GET /api/github']({}) as { configured: boolean }).configured, false);
     const s = await r['GET /api/status']({}) as { ollama: string | null; clickup: boolean; discord: boolean };
     assert.match(String(s.ollama), /Can't reach Ollama/);
     assert.equal(s.clickup, false);
@@ -216,6 +217,10 @@ describe('15. public demo', () => {
     assert.match(sent.text, /Nothing was actually sent/);
     assert.equal((await api.send(c.pending[0].draftId)).outcome, 'missing');
     await assert.rejects(() => api.compose('not-an-email', 'x', ''), /valid email/);
+    const gh = await api.github();
+    assert.equal(gh.configured, true);
+    assert.equal(gh.counts.changes, gh.open.filter((p: any) => p.review.state === 'changes_requested').length);
+    assert.ok(gh.open.some((p: any) => p.review.changes.length));
   });
 
   test('demo AI endpoint: off without a key, limited and sandboxed with one', async () => {

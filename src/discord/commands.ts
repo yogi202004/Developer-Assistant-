@@ -38,4 +38,4 @@ export const HELP = `🤖 **Developer Assistant**
 
 💬 You can also just **DM me** in plain language, e.g. _"email ravi@acme.com that the demo is ready for Thursday"_.
 📤 I never send on my own — every email waits for your **Send** tap (edit it in Gmail Drafts first if you like).
-🔔 I'll DM you about new task assignments, due/overdue tasks, new emails and a morning plan.`;
+🔔 I'll DM you about new task assignments, due/overdue tasks, new emails, your merged PRs or PRs with changes requested, and a morning plan.`;

@@ -1,5 +1,6 @@
 import * as cu from './integrations/clickup';
 import * as gm from './integrations/gmail';
+import * as gh from './integrations/github';
 import { chat, ollamaHealth, type ChatMessage, type ToolDef } from './llm/ollama';
 import { systemPrompt } from './llm/prompt';
 import { addHistory, getHistory, kvDelete, kvGet, kvList, kvSet } from './db';
@@ -8,6 +9,7 @@ import { dayKey, errMsg, fmtDate, parseAddresses, truncate } from './util';
 
 export const clickupOn = () => !!config.clickup.token;
 export const gmailOn = () => gm.gmailConfigured();
+export const githubOn = () => gh.githubConfigured();
 
 /** An email prepared as a Gmail draft, waiting for the owner to tap Send. */
 export interface PendingEmail { draftId: string; to: string; cc?: string; subject: string; body?: string; createdAt?: number }
@@ -238,6 +240,34 @@ export function parseEmailJson(raw: string, fallbackTopic: string): { subject: s
   };
 }
 
+// ---------------- GitHub (read-only) ----------------
+export interface PrView extends gh.PullRequest { review: gh.ReviewSummary }
+
+/** Your open PRs with their review decision, plus PRs merged in the last 7 days. */
+export async function myPullRequests(): Promise<{ author: string; open: PrView[]; merged: gh.PullRequest[] }> {
+  const author = await gh.getAuthor();
+  const [open, merged] = await Promise.all([gh.listMyOpenPrs(), gh.listMyMergedPrs(7)]);
+  const withReviews = await Promise.all(open.slice(0, 30).map(async (p) => ({ ...p, review: gh.summarizeReviews(await gh.listReviews(p), author) })));
+  return { author, open: withReviews, merged };
+}
+
+export async function prsText(): Promise<string> {
+  if (!githubOn()) return 'GitHub is not configured — add GITHUB_TOKEN to .env.';
+  const { author, open, merged } = await myPullRequests();
+  const line = (p: PrView) => {
+    const r = p.review;
+    const state = r.state === 'changes_requested' ? `🛑 changes requested by ${r.changesBy.map((u) => `@${u}`).join(', ')}`
+      : r.state === 'approved' ? `✅ approved by ${r.approvedBy.map((u) => `@${u}`).join(', ')}`
+        : p.draft ? '📝 draft' : '⏳ waiting for review';
+    return `${gh.prLine(p)} — ${state}`;
+  };
+  return [
+    `🔀 **Open pull requests by @${author} (${open.length})**`,
+    open.length ? open.map(line).join('\n') : 'None.',
+    merged.length ? `**Merged in the last 7 days (${merged.length})**\n${merged.map(gh.prLine).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
 // ---------------- Planning ----------------
 async function gatherContext(): Promise<string> {
   const parts: string[] = [];
@@ -249,6 +279,9 @@ async function gatherContext(): Promise<string> {
       const emails = await refreshInbox();
       parts.push(`UNREAD EMAILS:\n${emails.length ? emails.map((e, i) => `${i + 1}. ${e.from} — ${e.subject}: ${truncate(e.snippet, 160)}`).join('\n') : 'none'}`);
     } catch (e) { parts.push(`Gmail error: ${errMsg(e)}`); }
+  }
+  if (githubOn()) {
+    try { parts.push(`MY GITHUB PULL REQUESTS:\n${await prsText()}`); } catch (e) { parts.push(`GitHub error: ${errMsg(e)}`); }
   }
   return parts.join('\n\n') || 'No integrations configured.';
 }
@@ -279,6 +312,7 @@ export async function statusText(): Promise<string> {
     `🧠 Model: \`${config.ollama.model}\` — ${ollama ? `⚠️ ${ollama}` : 'OK'}`,
     `📋 ClickUp: ${clickupOn() ? 'connected' : 'off (no CLICKUP_TOKEN)'}`,
     `📧 Gmail: ${gmailOn() ? 'connected' : 'off (run npm run gmail:auth)'}`,
+    `🐙 GitHub: ${githubOn() ? `connected (read-only${config.github.user ? `, PRs by @${config.github.user}` : ''})` : 'off (no GITHUB_TOKEN)'}`,
     `🕘 Timezone: ${config.timezone} · quiet hours ${config.quietHours}`,
   ].join('\n');
 }
@@ -308,6 +342,9 @@ function availableTools(): ToolDef[] {
       subject: { type: 'string' },
       body: { type: 'string', description: 'Full email body, plain text' },
     }, ['to', 'subject', 'body']));
+  }
+  if (githubOn()) {
+    tools.push(fn('get_my_pull_requests', 'List my open GitHub pull requests with their review status (changes requested, approved, waiting), plus PRs merged in the last 7 days. Read-only.'));
   }
   return tools;
 }
@@ -343,6 +380,7 @@ async function runTool(name: string, args: Record<string, unknown>, pending: Pen
         pending.push(...(r.pending ?? []));
         return `Email to ${to} prepared ("${args.subject}"). NOT sent — I will tap Send myself.`;
       }
+      case 'get_my_pull_requests': return await prsText();
       default: return `Unknown tool ${name}`;
     }
   } catch (e) {

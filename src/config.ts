@@ -47,6 +47,12 @@ export const config = {
     pollMinutes: num('GMAIL_POLL_MINUTES', 3),
     summarizeNew: opt('GMAIL_SUMMARIZE_NEW', 'true') === 'true',
   },
+  github: {
+    token: opt('GITHUB_TOKEN'),
+    user: opt('GITHUB_USER'),
+    repos: opt('GITHUB_REPOS').split(',').map((r) => r.trim()).filter(Boolean),
+    pollMinutes: num('GITHUB_POLL_MINUTES', 5),
+  },
   schedule: {
     digestCron: opt('DIGEST_CRON', '0 9 * * 1-5'),
   },

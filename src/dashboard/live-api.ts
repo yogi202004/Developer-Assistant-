@@ -21,6 +21,24 @@ const taskView = (t: cu.Task) => ({
   list: t.list?.name ?? null,
 });
 
+const prView = (p: A.PrView) => ({
+  id: p.id,
+  repo: p.repo,
+  number: p.number,
+  title: p.title,
+  url: p.url,
+  draft: p.draft,
+  updatedAt: p.updatedAt,
+  comments: p.comments,
+  labels: p.labels,
+  review: {
+    state: p.review.state,
+    changesBy: p.review.changesBy,
+    approvedBy: p.review.approvedBy,
+    changes: p.review.changes.map((r) => ({ user: r.user, body: r.body.slice(0, 600), at: r.submittedAt, url: r.url })),
+  },
+});
+
 const emailView = (e: EmailSummary, i: number) => ({ n: i + 1, from: e.from, subject: e.subject, snippet: e.snippet, date: e.date, link: e.link });
 
 /** Last ~64 KB of the background-service log. */
@@ -51,6 +69,7 @@ export function liveRoutes(x: LiveExtras): Routes {
       ollama: await ollamaHealth(),
       clickup: A.clickupOn(),
       gmail: A.gmailOn(),
+      github: A.githubOn(),
       discord: x.discordReady(),
       timezone: config.timezone,
       quietHours: config.quietHours,
@@ -86,6 +105,21 @@ export function liveRoutes(x: LiveExtras): Routes {
     'GET /api/outbox': () => ({ pending: A.listPending() }),
     'POST /api/outbox/send': async (b) => A.sendPending(str(b.draftId, 'Draft id', 200)),
     'POST /api/outbox/discard': async (b) => A.discardPending(str(b.draftId, 'Draft id', 200)),
+
+    'GET /api/github': async () => {
+      if (!A.githubOn()) return { configured: false, user: config.github.user || null, repos: config.github.repos, open: [], merged: [], counts: null };
+      const { author, open, merged } = await A.myPullRequests();
+      const count = (s: string) => open.filter((p) => p.review.state === s).length;
+      return {
+        configured: true,
+        user: author,
+        repos: config.github.repos,
+        open: open.map(prView),
+        merged: merged.map(({ id, repo, number, title, url, mergedAt }) => ({ id, repo, number, title, url, mergedAt })),
+        counts: { open: open.length, changes: count('changes_requested'), approved: count('approved'), waiting: open.length - count('changes_requested') - count('approved'), merged: merged.length },
+        fetchedAt: Date.now(),
+      };
+    },
 
     'GET /api/today': () => ({ plan: A.lastPlan() }),
     'POST /api/today': async () => {

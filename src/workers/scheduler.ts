@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import * as cu from '../integrations/clickup';
 import * as gm from '../integrations/gmail';
-import { ask, clickupOn, gmailOn, todayPlan } from '../agent';
+import * as gh from '../integrations/github';
+import { ask, clickupOn, githubOn, gmailOn, todayPlan } from '../agent';
 import { config } from '../config';
 import { kvGet, kvSet, markSeen, pruneSeen, recordJob } from '../db';
 import { dayKey, errMsg, isQuietHours, truncate } from '../util';
@@ -80,6 +81,34 @@ async function pollGmail(notify: Notify) {
   if (fresh.length > 5) await notify(`…and ${fresh.length - 5} more new emails. Use \`/inbox\`.`);
 }
 
+/**
+ * Alerts for pull requests authored by you only: merged, or a reviewer requested changes.
+ * The first run just records what already exists. During quiet hours nothing is marked seen, so alerts arrive afterwards.
+ */
+export async function pollGitHub(notify: Notify) {
+  const seeded = kvGet('github_seeded') === '1';
+  if (seeded && isQuietHours()) return;
+  const author = await gh.getAuthor();
+  const [open, merged] = await Promise.all([gh.listMyOpenPrs(), gh.listMyMergedPrs(7)]);
+
+  for (const p of merged) {
+    if (markSeen('pr_merged', String(p.id)) && seeded) {
+      await notify(`🔀 **Pull request merged** · \`${gh.prRef(p)}\`\n[${p.title}](<${p.url}>)`);
+    }
+  }
+
+  for (const p of open.slice(0, 30)) {
+    const reviews = await gh.listReviews(p);
+    for (const r of reviews) {
+      if (r.state !== 'CHANGES_REQUESTED' || r.user.toLowerCase() === author.toLowerCase()) continue;
+      if (!markSeen('pr_changes', String(r.id)) || !seeded) continue;
+      const note = r.body.trim() ? `\n> ${truncate(r.body.replace(/\s+/g, ' ').trim(), 300)}` : '';
+      await notify(`📝 **Changes requested** by @${r.user} · \`${gh.prRef(p)}\`\n[${p.title}](<${r.url || p.url}>)${note}`);
+    }
+  }
+  if (!seeded) kvSet('github_seeded', '1');
+}
+
 export function startScheduler(notify: Notify) {
   if (clickupOn()) {
     const run = () => guard('ClickUp check', notify, () => pollClickUp(notify));
@@ -91,11 +120,16 @@ export function startScheduler(notify: Notify) {
     run();
     setInterval(run, config.gmail.pollMinutes * 60_000);
   }
+  if (githubOn()) {
+    const run = () => guard('GitHub check', notify, () => pollGitHub(notify));
+    run();
+    setInterval(run, config.github.pollMinutes * 60_000);
+  }
   if (cron.validate(config.schedule.digestCron)) {
     cron.schedule(config.schedule.digestCron, () => guard('Daily plan', notify, async () => notify(await todayPlan())), { timezone: config.timezone });
   } else {
     console.warn(`Invalid DIGEST_CRON "${config.schedule.digestCron}" — daily plan disabled.`);
   }
   cron.schedule('0 3 * * *', () => pruneSeen(30), { timezone: config.timezone });
-  console.log(`Scheduler started (ClickUp: ${clickupOn()}, Gmail: ${gmailOn()}).`);
+  console.log(`Scheduler started (ClickUp: ${clickupOn()}, Gmail: ${gmailOn()}, GitHub: ${githubOn()}).`);
 }

@@ -5,7 +5,7 @@
 export const DEMO_INFO = {
   ownerName: 'Yogesh',
   repoUrl: 'https://github.com/yogi202004/Developer-Assistant-',
-  tagline: 'A free, private AI assistant for developers: ClickUp + Gmail + Discord, powered by a local AI model.',
+  tagline: 'A free, private AI assistant for developers: ClickUp + Gmail + GitHub + Discord, powered by a local AI model.',
 };
 
 const HOUR = 3_600_000;
@@ -117,9 +117,40 @@ export const DEMO_EMAILS = [
   },
 ].map((e, i) => ({ ...e, n: i + 1, date: '', link: 'https://mail.google.com/' }));
 
+/** Sample pull requests by the demo author, in the same shape as GET /api/github. */
+export function demoGitHub(now = Date.now()) {
+  const iso = (ago) => new Date(now - ago).toISOString();
+  const pr = (id, repo, number, title, updated, review, extra = {}) => ({
+    id, repo, number, title, url: `https://github.com/${repo}/pull/${number}`, draft: false, updatedAt: iso(updated), comments: 0, labels: [],
+    review: { state: 'pending', changesBy: [], approvedBy: [], changes: [], ...review }, ...extra,
+  });
+  const open = [
+    pr(9101, 'acme/mobile', 318, 'Fix OAuth token refresh on Android 14', 40 * 60_000, {
+      state: 'changes_requested', changesBy: ['sam-lee'],
+      changes: [{ user: 'sam-lee', body: 'The refresh call still sends the expired access token when the app resumes from background. Please add a test for the resume path and log refresh failures to Sentry.', at: iso(40 * 60_000), url: 'https://github.com/acme/mobile/pull/318' }],
+    }, { labels: ['bug', 'auth'] }),
+    pr(9102, 'acme/web', 1207, 'Onboarding checklist v2 behind onboarding_v2 flag', 3 * HOUR, { state: 'approved', approvedBy: ['priya-s', 'jordan-lee'] }, { labels: ['feature'] }),
+    pr(9103, 'acme/api', 501, 'Sliding-window rate limiting for public API keys', 5 * HOUR, { state: 'commented' }),
+    pr(9104, 'acme/api', 507, 'Migration: move notification prefs to user_settings', 26 * HOUR, {}, { draft: true }),
+  ];
+  const merged = [
+    { id: 9201, repo: 'acme/api', number: 496, title: 'Accept old and new webhook secrets during rotation', url: 'https://github.com/acme/api/pull/496', mergedAt: iso(2 * HOUR) },
+    { id: 9202, repo: 'acme/web', number: 1199, title: 'Remove stale feature flags new_nav and fast_search', url: 'https://github.com/acme/web/pull/1199', mergedAt: iso(2 * DAY) },
+  ];
+  const count = (s) => open.filter((p) => p.review.state === s).length;
+  return {
+    configured: true, user: 'yogeshhh191', repos: [], open, merged, fetchedAt: now,
+    counts: { open: open.length, changes: count('changes_requested'), approved: count('approved'), waiting: open.length - count('changes_requested') - count('approved'), merged: merged.length },
+  };
+}
+
 export function demoNotifications(now = Date.now()) {
   const items = [
+    [30 * HOUR, '🟢 **Assistant online**\n🧠 Model: `qwen3:8b` — OK\n📋 ClickUp: connected\n📧 Gmail: connected'],
+    [29 * HOUR, '🔴 **Overdue**\n• `urgent` Fix OAuth token refresh on Android — _in progress_ · Mobile App'],
     [8 * HOUR + 50 * 60_000, '🟢 **Assistant online**\n🧠 Model: `qwen3:8b` — OK\n📋 ClickUp: connected\n📧 Gmail: connected'],
+    [2 * HOUR, '🔀 **Pull request merged** · `acme/api#496`\n[Accept old and new webhook secrets during rotation](<https://github.com/acme/api/pull/496>)'],
+    [40 * 60_000, '📝 **Changes requested** by @sam-lee · `acme/mobile#318`\n[Fix OAuth token refresh on Android 14](<https://github.com/acme/mobile/pull/318>)\n> The refresh call still sends the expired access token when the app resumes from background.'],
     [8 * HOUR, `☀️ **Plan for today**\n\n**Top 3 priorities**\n1. Fix OAuth token refresh on Android (overdue)\n2. Review PR #482 (due today)\n3. Ship onboarding checklist v2 (due today)`],
     [5 * HOUR, '🔴 **Overdue**\n• `urgent` Fix OAuth token refresh on Android — _in progress_ · Mobile App'],
     [3 * HOUR, '🆕 **New task assigned to you**\n• `high` Add rate limiting to the public API — _to do_ · Backend\n> Limit public API keys to 100 requests/min with a sliding window in Redis.'],
@@ -128,7 +159,7 @@ export function demoNotifications(now = Date.now()) {
     [40 * 60_000, '⏳ **Due within 24h**\n• `high` Review PR #482: payment retry with exponential backoff — _review_ · Backend\n• `high` Ship onboarding checklist v2 — _in progress_ · Web App'],
     [12 * 60_000, '📧 **Priya Sharma**\n**Can we demo onboarding v2 on Friday?**\n> Leadership wants to see the new onboarding checklist.\n🤖 Action: confirm the Friday 11:00 demo slot.'],
   ];
-  return items.map(([ago, text], i) => ({ id: i + 1, text, ts: now - ago })).reverse();
+  return items.sort((a, b) => b[0] - a[0]).map(([ago, text], i) => ({ id: i + 1, text, ts: now - ago })).reverse();
 }
 
 export const DEMO_DRAFTS = [
@@ -173,7 +204,7 @@ export function demoLog(startedAt, now = Date.now()) {
     [now - 2 * HOUR, '[plan] daily plan sent'],
   ];
   for (let at = startedAt + 60_000, i = 0; at < now; at += 47 * 60_000, i++) {
-    lines.push([at, '[clickup] checked 8 open tasks'], [at + 20_000, `[gmail] checked inbox, ${i % 3 ? 0 : 1} new important`]);
+    lines.push([at, '[clickup] checked 8 open tasks'], [at + 20_000, `[gmail] checked inbox, ${i % 3 ? 0 : 1} new important`], [at + 40_000, '[github] checked 4 open PRs by @yogeshhh191']);
   }
   return lines.sort((a, b) => a[0] - b[0]).map(([ts, text]) => `${new Date(ts).toISOString()} ${text}`).join('\n');
 }

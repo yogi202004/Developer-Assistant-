@@ -83,6 +83,19 @@ The assistant only **reads** tasks. It never edits, closes or reassigns anything
 
 Change which emails trigger alerts with `GMAIL_QUERY` (normal Gmail search syntax), e.g. `in:inbox is:unread is:important`.
 
+## 4b. GitHub (2 min, optional, read-only)
+
+1. Signed in as the account that authors your PRs, go to GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+2. Pick the repositories (or the organization) you want watched. Under **Repository permissions**, set **Pull requests: Read-only**. GitHub adds **Metadata: Read-only** automatically. Leave everything else at **No access**.
+3. Add to `.env`:
+   ```
+   GITHUB_TOKEN=github_pat_…
+   GITHUB_USER=yogeshhh191   # only PRs authored by this account trigger alerts
+   GITHUB_REPOS=             # optional: owner/repo,owner/other (blank = every repo the token can see)
+   ```
+
+You get a DM when **one of your PRs is merged** or **a reviewer requests changes** on it. PRs by anyone else, and your own reviews, never trigger anything. The first check only records what already exists, so you aren't flooded with old PRs. The dashboard's **GitHub** page shows your open PRs, their review state and recent merges. The assistant only **reads**: it never comments, approves, merges or pushes.
+
 ## 5. Run it
 
 Try it once in a terminal:
@@ -218,6 +231,7 @@ After changing `.env`, run `npm run service:restart`.
 
 - Only your Discord user ID can use the bot. Everyone else is refused.
 - Gmail scopes are read + compose. Every email is first saved as a Gmail draft and sent **only when you tap Send** in Discord. The AI has no way to send by itself. You can edit the draft in Gmail before tapping Send, and the edited version is what goes out. Each Send button works once, so a double-tap can't send twice. **Discard** deletes the draft.
+- GitHub is read-only: the client only sends GET requests, and the token only needs "Pull requests: Read-only".
 - The Discord bot only reads ClickUp. Through MCP, Cursor and Claude Code can comment on, create and update tasks (no deletes), after you approve each call. Turn this off with `MCP_ALLOW_CLICKUP_WRITES=false`.
 - Email/task text is treated as untrusted data in prompts. Even if an email contains a malicious instruction, the worst the AI can do is prepare a draft that you see before anything is sent.
 - Secrets live only in `.env` and `data/`, and both are git-ignored.

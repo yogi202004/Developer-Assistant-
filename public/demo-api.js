@@ -1,7 +1,7 @@
 // Demo backend: runs in the visitor's browser with sample data and never sends anything.
 // If the deployment has a free AI key (api/ai.js), AI answers are generated live; otherwise pre-written ones are used.
 import {
-  DEMO_DRAFTS, DEMO_EMAILS, DEMO_INFO, demoBreakdown, demoCompose, demoLog, demoNotifications, demoPlan, demoTasks, demoTriage,
+  DEMO_DRAFTS, DEMO_EMAILS, DEMO_INFO, demoBreakdown, demoCompose, demoGitHub, demoLog, demoNotifications, demoPlan, demoTasks, demoTriage,
 } from './demo-data.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,11 +75,12 @@ export function createDemoApi() {
     async status() {
       const now = Date.now();
       return {
-        model: 'qwen3:8b', ollama: null, clickup: true, gmail: true, discord: true,
+        model: 'qwen3:8b', ollama: null, clickup: true, gmail: true, github: true, discord: true,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, quietHours: '22-8', digestCron: '0 9 * * 1-5', startedAt,
         jobs: [
           { name: 'ClickUp check', lastRun: now - 2 * 60_000, ok: true },
           { name: 'Gmail check', lastRun: now - 60_000, ok: true },
+          { name: 'GitHub check', lastRun: now - 3 * 60_000, ok: true },
           { name: 'Daily plan', lastRun: plan.ts, ok: true },
         ],
       };
@@ -174,6 +175,7 @@ export function createDemoApi() {
     async resetChat() { return { ok: true }; },
 
     async activity() { return { items: notifications }; },
+    async github() { return demoGitHub(); },
     async logs() { return { path: 'data/logs/assistant.log', text: demoLog(startedAt) }; },
   };
 }

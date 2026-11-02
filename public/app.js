@@ -35,6 +35,7 @@ function createLiveApi() {
     resetChat: () => req('POST', '/api/chat/reset', {}),
     activity: () => req('GET', '/api/activity'),
     logs: () => req('GET', '/api/logs'),
+    github: () => req('GET', '/api/github'),
   };
 }
 
@@ -60,6 +61,7 @@ function withCache(raw) {
     inbox: cached('inbox'),
     outbox: cached('outbox'),
     activity: cached('activity'),
+    github: cached('github'),
     send: thenInvalidate(raw.send, 'outbox'),
     discard: thenInvalidate(raw.discard, 'outbox'),
     compose: thenInvalidate(raw.compose, 'outbox'),
@@ -126,6 +128,11 @@ const ICONS = {
   shield: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>'),
   eye: svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'),
   server: svg('<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/>'),
+  github: svg('<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7"/><path d="M18 15.5V10a4 4 0 0 0-4-4h-3"/><path d="M13 3.5L10.5 6 13 8.5"/>'),
+  merge: svg('<circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 7.5v9"/><path d="M6 7.5c0 3 3 4.5 9.5 4.5"/>'),
+  file: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
+  folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  repo: svg('<path d="M5 4a2 2 0 0 1 2-2h12v16H7a2 2 0 0 0-2 2z"/><path d="M5 20a2 2 0 0 0 2 2h12v-4"/>'),
 };
 
 function ago(ts) {
@@ -253,6 +260,7 @@ async function refreshBadges() {
   api.outbox().then((r) => setBadge('outbox', r.pending.length)).catch(() => {});
   api.tasks().then((r) => setBadge('tasks', r.configured ? r.counts.working : 0)).catch(() => {});
   api.inbox().then((r) => setBadge('inbox', r.configured ? r.emails.length : 0)).catch(() => {});
+  api.github().then((r) => setBadge('github', r.configured ? r.counts.changes : 0)).catch(() => {});
 }
 
 // ---------- Overview ----------
@@ -307,7 +315,7 @@ async function viewToday(view, actions) {
       panel('Focus now', 'zap', 'purple', focus, counts.focus, more('#tasks', 'All tasks')),
       panel('Inbox', 'mail', 'blue', mail, counts.mail, more('#inbox', 'Open inbox')),
       panel('Today\'s plan', 'sparkle', 'yellow', planBody, counts.plan),
-      panel('Recent alerts', 'bell', 'orange', recent, counts.recent, more('#activity', 'Activity'))),
+      panel('Code & alerts', 'github', 'orange', recent, counts.recent, more('#github', 'GitHub'))),
     panel('Assistant health', 'heart', 'green', health, counts.health, null, 'health-panel'),
   );
 
@@ -386,19 +394,21 @@ async function viewToday(view, actions) {
     counts.health.textContent = `Running since ${ago(s.startedAt)} · quiet hours ${s.quietHours} · ${s.timezone}`;
     health.replaceChildren(healthTiles(s));
   }).catch((e) => health.replaceChildren(errorBox(e)));
+  // Emails, tasks and the plan already have their own panels above, so this one only shows what they don't.
   api.activity().then(({ items }) => {
-    counts.recent.textContent = String(items.length);
-    recent.replaceChildren(items.length
-      ? h('ul', { class: 'recent-list' }, items.slice(0, 15).map((i) => {
+    const shown = foldRepeats(items).filter((i) => ['github', 'system'].includes(categorize(i.text)));
+    counts.recent.textContent = String(shown.length);
+    recent.replaceChildren(shown.length
+      ? h('ul', { class: 'recent-list' }, shown.slice(0, 15).map((i) => {
         const cat = categorize(i.text);
-        const alarming = /^(🔴|⚠️)/u.test(i.text.trimStart());
-        return h('li', { class: `cat-${cat}${alarming ? ' alarming' : ''}` },
-          h('span', { class: 'recent-icon' }, icon(alarming ? 'alert' : CATEGORIES[cat].icon)),
+        const tone = toneOf(i.text);
+        return h('li', { class: `cat-${cat}${tone ? ` ${tone}` : ''}` },
+          h('span', { class: 'recent-icon' }, icon(tone === 'alarming' ? 'alert' : eventIcon(i.text, cat))),
           h('div', { class: 'grow' },
             mdBlock(i.text.split('\n')[0].replace(LEADING_EMOJI, ''), 'recent-title'),
-            h('span', { class: 'muted small' }, `${CATEGORIES[cat].label} · ${ago(i.ts)}`)));
+            h('span', { class: 'muted small' }, `${CATEGORIES[cat].label} · ${ago(i.ts)}${i.count > 1 ? ` · ×${i.count}` : ''}`)));
       }))
-      : empty('No alerts yet', 'New tasks, due dates and emails appear here.'));
+      : empty('All quiet', 'Merged PRs, change requests and assistant alerts appear here. Emails, tasks and your plan have their own panels.'));
   }).catch((e) => recent.replaceChildren(errorBox(e)));
 }
 
@@ -423,6 +433,7 @@ function healthTiles(s) {
       tile('sparkle', 'AI model', !s.ollama, s.ollama ? 'Not reachable' : `${s.model} · local`),
       tile('tasks', 'ClickUp', s.clickup, s.clickup ? 'Connected' : 'Not connected'),
       tile('mail', 'Gmail', s.gmail, s.gmail ? 'Connected' : 'Not connected'),
+      tile('github', 'GitHub', s.github, s.github ? 'Read-only' : 'Not connected'),
       tile('chat', 'Discord bot', s.discord, s.discord ? 'Online' : 'Offline')),
     jobs.length ? h('p', { class: 'list-label' }, 'Background checks') : null,
     jobs.length ? h('div', { class: 'health-grid' }, jobs.map((j) => tile(j.ok ? 'refresh' : 'alert', j.name, j.ok, `${j.ok ? 'OK' : 'Failed'} · ${ago(j.lastRun)}`))) : null,
@@ -699,6 +710,7 @@ async function viewOutbox(view, actions) {
 
 // ---------- Activity ----------
 const CATEGORIES = {
+  github: { label: 'GitHub', icon: 'github' },
   task: { label: 'Tasks', icon: 'tasks' },
   email: { label: 'Email', icon: 'mail' },
   plan: { label: 'Plans', icon: 'sparkle' },
@@ -708,11 +720,40 @@ const LEADING_EMOJI = /^\p{Extended_Pictographic}\uFE0F?\s*/u;
 
 function categorize(text) {
   const first = text.trimStart();
+  if (/^(🔀|📝)/u.test(first)) return 'github';
   if (/^(📧|📬|📤)/u.test(first) || /more new emails/i.test(first)) return 'email';
   if (/^☀️/u.test(first) || /^\W*\*\*Plan for/i.test(first)) return 'plan';
   if (/^(🆕|⏳|🔴|✅)/u.test(first)) return 'task';
   return 'system';
 }
+const toneOf = (text) => (/^(🔴|⚠️)/u.test(text.trimStart()) ? 'alarming' : /^📝/u.test(text.trimStart()) ? 'attention' : '');
+const eventIcon = (text, cat) => (/^🔀/u.test(text.trimStart()) ? 'merge' : CATEGORIES[cat].icon);
+
+/** Folds repeated alerts (the same overdue reminder every day, an "online" message per restart) into one entry with a count. */
+function foldRepeats(items) {
+  const byKey = new Map();
+  const out = [];
+  for (const i of items) {
+    const first = i.text.split('\n')[0];
+    const key = /Assistant online/.test(first) ? first : i.text.trim();
+    const hit = byKey.get(key);
+    if (hit) { hit.count += 1; hit.firstTs = i.ts; continue; }
+    const entry = { ...i, count: 1, firstTs: i.ts };
+    byKey.set(key, entry);
+    out.push(entry);
+  }
+  return out;
+}
+
+/** Email alerts → "Sender · Subject" plus the AI's one-line verdict. The snippet already lives in the Inbox. */
+function emailParts(text) {
+  const lines = text.split('\n');
+  const strip = (s = '') => s.replace(LEADING_EMOJI, '').replace(/\*\*/g, '').trim();
+  return { from: senderName(strip(lines[0])), subject: strip(lines[1]), triage: strip(lines.find((l) => l.startsWith('🤖'))) };
+}
+
+/** Task alerts without the Discord-only hints and the description quote (both shown on the Tasks page). */
+const compactTaskBody = (detail) => detail.split('\n').filter((l) => !/^>|^_Next:/.test(l.trim())).join('\n').trim();
 
 function dayLabel(ts) {
   const d = new Date(ts).toDateString();
@@ -721,11 +762,29 @@ function dayLabel(ts) {
   return new Date(ts).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
+const repeatChip = (item) => (item.count > 1
+  ? h('span', { class: 'chip repeat', title: `First at ${new Date(item.firstTs).toLocaleString()}` }, `×${item.count} · since ${dayLabel(item.firstTs).toLowerCase()}`)
+  : null);
+
+function eventShell(cat, tone, iconName, title, ts, ...body) {
+  return h('li', { class: `event cat-${cat}${tone ? ` ${tone}` : ''}` },
+    h('span', { class: 'event-icon' }, icon(tone === 'alarming' ? 'alert' : iconName)),
+    h('div', { class: 'event-main' },
+      h('div', { class: 'event-head' }, title, h('time', { class: 'muted small', title: new Date(ts).toLocaleString() }, fmtTime(ts))),
+      ...body));
+}
+
 function eventItem(item) {
   const cat = categorize(item.text);
+  const tone = toneOf(item.text);
+  if (cat === 'email') {
+    const e = emailParts(item.text);
+    return eventShell(cat, tone, 'mail', h('div', { class: 'event-title' }, h('strong', null, e.from), h('span', { class: 'muted' }, ` · ${e.subject}`)), item.ts,
+      h('div', { class: 'event-foot' }, e.triage ? h('span', { class: `chip ${/^action/i.test(e.triage) ? 'warn' : ''}` }, e.triage) : null, repeatChip(item),
+        h('a', { class: 'link-more', href: '#inbox' }, 'Inbox', icon('arrow'))));
+  }
   const [first, ...rest] = item.text.split('\n');
-  const alarming = /^(🔴|⚠️)/u.test(item.text.trimStart());
-  const detail = rest.join('\n').trim();
+  const detail = cat === 'task' ? compactTaskBody(rest.join('\n')) : rest.join('\n').trim();
   const more = detail.split('\n').length > 3 || detail.length > 260;
   const bodyEl = detail ? mdBlock(detail, `event-body${more ? ' collapsed' : ''}`) : null;
   const toggle = more ? h('button', { class: 'link-btn', type: 'button' }, 'Show more') : null;
@@ -733,13 +792,35 @@ function eventItem(item) {
     const open = bodyEl.classList.toggle('collapsed');
     toggle.textContent = open ? 'Show more' : 'Show less';
   });
-  return h('li', { class: `event cat-${cat}${alarming ? ' alarming' : ''}` },
-    h('span', { class: 'event-icon' }, icon(alarming ? 'alert' : CATEGORIES[cat].icon)),
-    h('div', { class: 'event-main' },
-      h('div', { class: 'event-head' },
-        mdBlock(first.replace(LEADING_EMOJI, ''), 'event-title'),
-        h('time', { class: 'muted small', title: new Date(item.ts).toLocaleString() }, fmtTime(item.ts))),
-      bodyEl, toggle));
+  const chip = repeatChip(item);
+  return eventShell(cat, tone, eventIcon(item.text, cat), mdBlock(first.replace(LEADING_EMOJI, ''), 'event-title'), item.ts,
+    bodyEl, toggle, chip ? h('div', { class: 'event-foot' }, chip) : null);
+}
+
+/** Several emails in a row become one entry with a line per email. */
+function emailGroupItem(list) {
+  return eventShell('email', '', 'mail', h('div', { class: 'event-title' }, h('strong', null, `${list.length} new emails`)), list[0].ts,
+    h('ul', { class: 'event-mails' }, list.map((i) => {
+      const e = emailParts(i.text);
+      return h('li', null, h('strong', null, e.from), h('span', { class: 'muted ellipsis' }, e.subject),
+        e.triage ? h('span', { class: `chip ${/^action/i.test(e.triage) ? 'warn' : ''}` }, /^action/i.test(e.triage) ? 'action' : 'fyi') : null);
+    })),
+    h('div', { class: 'event-foot' }, h('a', { class: 'link-more', href: '#inbox' }, 'Open inbox', icon('arrow'))));
+}
+
+/** Day's events in order, with runs of 2+ consecutive email alerts grouped. */
+function dayEvents(list) {
+  const out = [];
+  for (let i = 0; i < list.length;) {
+    if (categorize(list[i].text) === 'email' && list[i].count === 1) {
+      let j = i;
+      while (j < list.length && categorize(list[j].text) === 'email' && list[j].count === 1) j++;
+      if (j - i > 1) { out.push(emailGroupItem(list.slice(i, j))); i = j; continue; }
+    }
+    out.push(eventItem(list[i]));
+    i++;
+  }
+  return out;
 }
 
 const ISO_PREFIX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+/;
@@ -792,22 +873,26 @@ async function viewActivity(view, actions) {
           logBody))));
 
   const renderFeed = () => {
-    const counts = { all: items.length };
-    for (const i of items) { const c = categorize(i.text); counts[c] = (counts[c] ?? 0) + 1; }
+    const folded = foldRepeats(items);
+    const counts = { all: folded.length };
+    for (const i of folded) { const c = categorize(i.text); counts[c] = (counts[c] ?? 0) + 1; }
     filters.replaceChildren(...[['all', 'All'], ...Object.entries(CATEGORIES).map(([k, v]) => [k, v.label])]
       .map(([k, label]) => h('button', { class: `filter${filter === k ? ' active' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(filter === k), onclick: () => { filter = k; renderFeed(); } },
         label, h('span', { class: 'filter-count' }, String(counts[k] ?? 0)))));
-    const shown = items.filter((i) => filter === 'all' || categorize(i.text) === filter);
+    const shown = folded.filter((i) => filter === 'all' || categorize(i.text) === filter);
     if (!shown.length) {
       feed.replaceChildren(emptyState('bell', items.length ? 'Nothing in this category' : 'No alerts yet',
-        'New tasks, due dates, important emails and your morning plan show up here as the assistant finds them.'));
+        'New tasks, due dates, important emails, GitHub reviews and your morning plan show up here as the assistant finds them.'));
       return;
     }
     const days = new Map();
     for (const i of shown) { const d = dayLabel(i.ts); if (!days.has(d)) days.set(d, []); days.get(d).push(i); }
-    feed.replaceChildren(...[...days].map(([day, list]) => h('section', { class: 'day' },
-      h('h4', { class: 'day-label' }, day, h('span', { class: 'muted' }, ` · ${list.length}`)),
-      h('ol', { class: 'events' }, list.map(eventItem)))));
+    const hidden = items.length - folded.length;
+    feed.replaceChildren(
+      hidden ? h('p', { class: 'muted small fold-note' }, icon('check'), `${hidden} repeated alert${hidden === 1 ? '' : 's'} folded into one entry each.`) : '',
+      ...[...days].map(([day, list]) => h('section', { class: 'day' },
+        h('h4', { class: 'day-label' }, day, h('span', { class: 'muted' }, ` · ${list.length}`)),
+        h('ol', { class: 'events' }, dayEvents(list)))));
   };
 
   const renderLog = () => {
@@ -834,7 +919,8 @@ async function viewActivity(view, actions) {
       statEls.today.value.textContent = String(items.filter((i) => i.ts >= dayStart).length);
       statEls.today.hint.textContent = items[0] ? `latest ${ago(items[0].ts)}` : 'none yet';
       statEls.week.value.textContent = String(items.filter((i) => i.ts >= Date.now() - 7 * 86_400_000).length);
-      statEls.week.hint.textContent = `${items.filter((i) => categorize(i.text) === 'email').length} about email`;
+      const ghCount = items.filter((i) => categorize(i.text) === 'github').length;
+      statEls.week.hint.textContent = `${ghCount} GitHub · ${items.filter((i) => categorize(i.text) === 'email').length} email`;
       if (changed) renderFeed();
     } else feed.replaceChildren(errorBox(activity.reason));
 
@@ -854,7 +940,7 @@ async function viewActivity(view, actions) {
             h('span', { class: 'muted small' }, `${j.ok ? 'Last run' : 'Failed'} ${ago(j.lastRun)}`),
             !j.ok && j.error ? h('p', { class: 'job-error' }, j.error) : null),
           h('span', { class: `chip ${j.ok ? 'ok' : 'bad'}` }, j.ok ? 'Healthy' : 'Failed'))))
-        : emptyState('server', 'No runs yet', 'ClickUp and Gmail checks appear here after their first run.'),
+        : emptyState('server', 'No runs yet', 'ClickUp, Gmail and GitHub checks appear here after their first run.'),
       h('p', { class: 'muted small jobs-foot' }, `Quiet hours ${s.quietHours} · ${s.timezone} · AI model ${s.model}${s.ollama ? ' (offline)' : ''}`));
     } else jobsBody.replaceChildren(errorBox(status.reason));
 
@@ -867,6 +953,168 @@ async function viewActivity(view, actions) {
   reload.addEventListener('click', () => load(true));
   await load();
   return setInterval(() => load(true), 30_000);
+}
+
+// ---------- GitHub (read-only developer window) ----------
+const PR_TABS = [
+  ['attention', 'needs-changes.diff', 'red'],
+  ['open', 'open-prs.ts', 'blue'],
+  ['approved', 'approved.md', 'green'],
+  ['merged', 'merged.log', 'purple'],
+];
+const PR_STATE = {
+  changes_requested: ['changes requested', 'red'],
+  approved: ['approved', 'green'],
+  commented: ['commented', 'blue'],
+  pending: ['waiting for review', 'gray'],
+};
+
+const cl = (cls, ...children) => h('div', { class: `cl ${cls}` }, ...children);
+const tk = (cls, text) => h('span', { class: `tk-${cls}` }, text);
+const agoIso = (iso) => (iso ? ago(new Date(iso).getTime()) : '');
+
+function prLines(p, tab) {
+  if (tab === 'merged') {
+    return [cl('pr', icon('merge', 'tk-merged'),
+      h('a', { class: 'tk-title', href: p.url, target: '_blank', rel: 'noopener noreferrer' }, p.title),
+      tk('repo', p.repo), tk('num', `#${p.number}`), tk('comment', `// merged ${agoIso(p.mergedAt)}`))];
+  }
+  const r = p.review;
+  const [label, tone] = p.draft && r.state === 'pending' ? ['draft', 'gray'] : PR_STATE[r.state];
+  const lines = [cl('pr', h('span', { class: `state-dot ${tone}` }),
+    h('a', { class: 'tk-title', href: p.url, target: '_blank', rel: 'noopener noreferrer' }, p.title),
+    tk('repo', p.repo), tk('num', `#${p.number}`), h('span', { class: `tk-badge ${tone}` }, label),
+    tk('comment', `// updated ${agoIso(p.updatedAt)}`))];
+  for (const c of r.changes) {
+    const note = c.body.replace(/\s+/g, ' ').trim();
+    lines.push(cl('diff del', tk('sign', '-'), h('a', { class: 'tk-user', href: c.url || p.url, target: '_blank', rel: 'noopener noreferrer' }, `@${c.user}`),
+      tk('punct', ': '), note ? tk('str', `"${note.length > 220 ? `${note.slice(0, 217)}…` : note}"`) : tk('comment', '(no comment, see the review)'),
+      c.at ? tk('comment', `// ${agoIso(c.at)}`) : null));
+  }
+  if (r.approvedBy.length) lines.push(cl('diff add', tk('sign', '+'), tk('kw', 'approved by'), ...r.approvedBy.map((u) => tk('user', `@${u}`))));
+  if (r.state === 'pending' && !p.draft) lines.push(cl('diff', tk('sign', '~'), tk('comment', 'no reviews yet')));
+  if (p.labels.length) lines.push(cl('labels', tk('key', 'labels'), tk('punct', ': ['), ...p.labels.map((l, i) => [tk('str', `"${l}"`), i < p.labels.length - 1 ? tk('punct', ', ') : null]), tk('punct', ']')));
+  return lines;
+}
+
+async function viewGitHub(view, actions) {
+  const reload = refreshBtn();
+  actions.append(reload);
+  let data = null;
+  let tab = null;
+  let repo = null;
+  const win = h('section', { class: 'ide' }, h('div', { class: 'ide-loading' }, skeleton(8)));
+  const termBody = h('div', { class: 'terminal-body' }, skeleton(3));
+  view.append(win, h('article', { class: 'terminal' },
+    h('header', { class: 'terminal-head' },
+      h('span', { class: 'lights' }, h('i'), h('i'), h('i')),
+      h('span', { class: 'grow terminal-title' }, icon('terminal'), 'gh events --mine'),
+      h('span', { class: 'chip ok' }, icon('shield'), 'read-only')),
+    termBody));
+
+  const lists = () => {
+    const open = data.open.filter((p) => !repo || p.repo === repo);
+    return {
+      attention: open.filter((p) => p.review.state === 'changes_requested'),
+      open,
+      approved: open.filter((p) => p.review.state === 'approved'),
+      merged: data.merged.filter((p) => !repo || p.repo === repo),
+    };
+  };
+
+  const setupWindow = () => {
+    const lines = [
+      cl('c', tk('comment', '# GitHub is not connected yet. Add these lines to .env, then restart the assistant.')),
+      cl('c', tk('comment', '# Token: github.com/settings/personal-access-tokens → Fine-grained → "Pull requests: Read-only".')),
+      cl('', ''),
+      cl('', tk('key', 'GITHUB_TOKEN'), tk('punct', '='), tk('str', 'github_pat_…')),
+      cl('', tk('key', 'GITHUB_USER'), tk('punct', '='), tk('str', data?.user || 'yogeshhh191'), tk('comment', '  # only PRs by this author')),
+      cl('', tk('key', 'GITHUB_REPOS'), tk('punct', '='), tk('comment', '  # optional: owner/repo,owner/other')),
+      cl('', ''),
+      cl('c', tk('comment', '# You get a Discord DM when one of your PRs is merged or a reviewer requests changes.')),
+      cl('c', tk('comment', '# The assistant only reads. It can never comment, approve, merge or push.')),
+    ];
+    win.replaceChildren(
+      h('header', { class: 'ide-titlebar' }, h('span', { class: 'lights' }, h('i'), h('i'), h('i')), h('span', { class: 'ide-title' }, '.env — dev-assistant')),
+      h('div', { class: 'ide-body single' },
+        h('main', { class: 'ide-editor' },
+          h('div', { class: 'ide-tabs' }, h('span', { class: 'ide-tab active' }, icon('file'), '.env')),
+          h('div', { class: 'ide-code' }, lines))),
+      h('footer', { class: 'ide-status' }, h('span', null, icon('github'), 'GitHub · not connected'), h('span', { class: 'grow' }), h('span', null, 'read-only')));
+  };
+
+  const render = () => {
+    if (!data.configured) { setupWindow(); return; }
+    const L = lists();
+    tab ??= L.attention.length ? 'attention' : 'open';
+    const repos = [...new Set([...data.open, ...data.merged].map((p) => p.repo))].sort();
+    const fileBtn = (key, name, tone) => h('button', { class: `ide-file${tab === key ? ' active' : ''}`, type: 'button', onclick: () => { tab = key; render(); } },
+      h('span', { class: `state-dot ${tone}` }), h('span', { class: 'grow ellipsis' }, name), h('span', { class: 'ide-count' }, String(L[key].length)));
+    const shown = L[tab];
+    const header = {
+      attention: shown.length ? `// ${shown.length} pull request${shown.length === 1 ? '' : 's'} with changes requested: fix, push, then re-request review` : '// no changes requested on your open PRs 🎉',
+      open: `// ${shown.length} open pull request${shown.length === 1 ? '' : 's'} by @${data.user}`,
+      approved: shown.length ? `// ${shown.length} approved and ready to merge` : '// nothing approved yet',
+      merged: shown.length ? `// ${shown.length} merged in the last 7 days` : '// nothing merged in the last 7 days',
+    }[tab];
+    const code = [cl('c', tk('comment', header)), cl('', '')];
+    shown.forEach((p, i) => { code.push(...prLines(p, tab)); if (i < shown.length - 1) code.push(cl('', '')); });
+
+    win.replaceChildren(
+      h('header', { class: 'ide-titlebar' },
+        h('span', { class: 'lights' }, h('i'), h('i'), h('i')),
+        h('span', { class: 'ide-title' }, `${PR_TABS.find(([k]) => k === tab)[1]} — @${data.user} — GitHub`),
+        h('span', { class: 'ide-sync' }, `synced ${ago(data.fetchedAt ?? Date.now())}`)),
+      h('div', { class: 'ide-body' },
+        h('aside', { class: 'ide-explorer' },
+          h('p', { class: 'ide-section' }, 'Explorer'),
+          h('p', { class: 'ide-folder' }, icon('folder'), 'pull-requests'),
+          PR_TABS.map(([k, name, tone]) => fileBtn(k, name, tone)),
+          repos.length ? h('p', { class: 'ide-folder' }, icon('folder'), 'repositories') : null,
+          repos.map((r) => h('button', { class: `ide-file repo${repo === r ? ' active' : ''}`, type: 'button', title: repo === r ? 'Show all repositories' : `Only ${r}`, onclick: () => { repo = repo === r ? null : r; render(); } },
+            icon('repo'), h('span', { class: 'grow ellipsis' }, r)))),
+        h('main', { class: 'ide-editor' },
+          h('div', { class: 'ide-tabs', role: 'tablist' }, PR_TABS.map(([k, name, tone]) => h('button', {
+            class: `ide-tab${tab === k ? ' active' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(tab === k), onclick: () => { tab = k; render(); },
+          }, h('span', { class: `state-dot ${tone}` }), name, L[k].length ? h('span', { class: 'ide-count' }, String(L[k].length)) : null))),
+          h('div', { class: 'ide-crumbs' }, 'github', tk('punct', ' › '), data.user, tk('punct', ' › '), repo ?? 'all repositories', tk('punct', ' › '), PR_TABS.find(([k]) => k === tab)[1]),
+          h('div', { class: 'ide-code' }, code))),
+      h('footer', { class: 'ide-status' },
+        h('span', null, icon('github'), `@${data.user}`),
+        h('span', { class: data.counts.changes ? 'warn' : '' }, `● ${data.counts.changes} changes requested`),
+        h('span', null, `✓ ${data.counts.approved} approved`),
+        h('span', null, `◷ ${data.counts.waiting} waiting`),
+        h('span', { class: 'grow' }),
+        h('span', null, data.repos?.length ? `${data.repos.length} repo filter` : 'all repos'),
+        h('span', null, 'read-only')));
+  };
+
+  const renderEvents = (items) => {
+    const events = foldRepeats(items).filter((i) => categorize(i.text) === 'github').slice(0, 40);
+    termBody.replaceChildren(...(events.length ? events.map((i) => {
+      const merged = /^🔀/u.test(i.text.trimStart());
+      const ref = /`([^`]+#\d+)`/.exec(i.text)?.[1] ?? '';
+      const title = /\[([^\]]+)\]/.exec(i.text)?.[1] ?? '';
+      const who = /by @([\w-]+)/.exec(i.text)?.[1];
+      return h('div', { class: `log-line ${merged ? 'merged' : 'warn'}` },
+        h('span', { class: 'log-ts', title: new Date(i.ts).toLocaleString() }, `${fmtDay(i.ts)} ${fmtTime(i.ts)}`),
+        h('span', { class: 'log-kind' }, merged ? 'merged ' : 'changes'), ` ${ref}  ${title}${who ? `  @${who}` : ''}`);
+    }) : [h('div', { class: 'log-line' }, '$ waiting for events… merges and change requests on your PRs appear here.')]));
+  };
+
+  const load = async (force = false) => {
+    const [gh, activity] = await Promise.allSettled([api.github(force), api.activity(force)]);
+    if (gh.status === 'fulfilled') {
+      data = gh.value;
+      render();
+      setBadge('github', data.configured ? data.counts.changes : 0);
+    } else win.replaceChildren(h('div', { class: 'ide-loading' }, errorBox(gh.reason)));
+    if (activity.status === 'fulfilled') renderEvents(activity.value.items);
+    else termBody.replaceChildren(h('div', { class: 'log-line err' }, activity.reason?.message ?? 'Could not load events.'));
+  };
+  reload.addEventListener('click', () => load(true));
+  await load();
+  return setInterval(() => load(true), 120_000);
 }
 
 // ---------- Floating chat widget ----------
@@ -996,9 +1244,10 @@ const VIEWS = {
   inbox: { group: 'Workspace', title: 'Inbox', sub: 'Unread email with AI triage, summaries and reply drafts.', render: viewInbox },
   compose: { group: 'Email', title: 'Compose', sub: 'Describe the email; the AI writes it; you approve it.', render: viewCompose },
   outbox: { group: 'Email', title: 'Outbox', sub: 'Review every email before it leaves. Nothing is sent until you click Send.', render: viewOutbox },
-  activity: { group: 'System', title: 'Activity', sub: 'Everything the assistant noticed and told you, plus the health of the background service.', render: viewActivity },
+  github: { group: 'Code', title: 'GitHub', sub: 'Your pull requests, read-only: what needs changes, what\'s approved and what merged. You get a DM for merges and change requests.', render: viewGitHub },
+  activity: { group: 'System', title: 'Activity', sub: 'Everything the assistant noticed, with repeats folded, plus the health of the background service.', render: viewActivity },
 };
-const BADGES = { tasks: 'tasks', inbox: 'inbox', outbox: 'outbox' };
+const BADGES = { tasks: 'tasks', inbox: 'inbox', outbox: 'outbox', github: 'github' };
 
 let api;
 let session = { name: '' };
@@ -1079,7 +1328,7 @@ async function sidebarStatus() {
           h('strong', null, session.name || 'You'),
           h('div', { class: 'status-line' }, h('span', { class: `dot ${ok ? 'ok' : 'bad'}` }),
             api.mode === 'demo' ? 'Demo mode' : ok ? `Running · ${ago(s.startedAt).replace(' ago', '')}` : 'Needs attention'))),
-      h('div', { class: 'conns' }, conn('AI', !s.ollama), conn('ClickUp', s.clickup), conn('Gmail', s.gmail), conn('Discord', s.discord)));
+      h('div', { class: 'conns' }, conn('AI', !s.ollama), conn('ClickUp', s.clickup), conn('Gmail', s.gmail), conn('GitHub', s.github), conn('Discord', s.discord)));
   } catch { /* ignore */ }
 }
 
@@ -1120,7 +1369,7 @@ async function main() {
   refreshBadges();
   sidebarStatus();
   setInterval(sidebarStatus, 60_000);
-  setInterval(() => { api.invalidate('tasks', 'inbox', 'outbox'); refreshBadges(); }, 3 * 60_000);
+  setInterval(() => { api.invalidate('tasks', 'inbox', 'outbox', 'github'); refreshBadges(); }, 3 * 60_000);
 }
 
 main();
